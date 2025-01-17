@@ -15,6 +15,9 @@ use oro_logo_rle::{Command, OroLogoData};
 /// The Oro logo, aliased to a specific resolution.
 type OroLogo = oro_logo_rle::OroLogo<oro_logo_rle::OroLogo256x256>;
 
+/// How many steps to fade in per frame.
+const FADE_IN_STEP: u8 = 2;
+
 /// Writes a byte slice to the debug output.
 // NOTE(qix-): This module is intended to be an `oro-std` module, which will
 // NOTE(qix-): (eventually) have `println!` et al. For now, we hack it in,
@@ -163,7 +166,7 @@ impl Vbuf {
 #[doc(hidden)]
 fn sleep_between_frame() {
 	// TODO(qix-): Implement a proper sleep syscall.
-	for _ in 0..10_000_000 {
+	for _ in 0..100_000_000 {
 		unsafe {
 			core::arch::asm!("nop");
 		}
@@ -201,8 +204,16 @@ extern "Rust" fn main() {
 
 		let mut iter = OroLogo::new();
 
+		let mut fade_in = 255u8;
+
 		loop {
 			let mut off = 0usize;
+
+			#[doc(hidden)]
+			static mut OFF_SCREEN: [u8; (OroLogo::WIDTH * OroLogo::HEIGHT) / 4] =
+				[0; { (OroLogo::WIDTH * OroLogo::HEIGHT) / 4 }];
+
+			fade_in = fade_in.saturating_sub(FADE_IN_STEP);
 
 			loop {
 				match iter.next() {
@@ -214,15 +225,31 @@ extern "Rust" fn main() {
 					Some(Command::End) => break,
 
 					Some(Command::Draw(count, lightness)) => {
-						let color = (lightness & 0b11) << 6;
+						if fade_in > 0 {
+							// We need to draw first to the off-screen buffer,
+							// then blit it to the screen with the multiplier.
+							for i in 0..count {
+								let off = off + i as usize;
+								let byte_off = off / 4;
+								let bit_off = (off % 4) * 2;
+								unsafe {
+									OFF_SCREEN[byte_off] =
+										OFF_SCREEN[byte_off] & !(0b11 << bit_off)
+											| ((lightness & 0b11) << bit_off);
+								}
+							}
+						} else {
+							// Otherwise, we can draw directly.
+							let color = (lightness & 0b11) << 6;
 
-						for i in 0..count {
-							let off = off + i as usize;
-							let x = off % OroLogo::WIDTH;
-							let y = off / OroLogo::WIDTH;
-							let x = x as u64 + left;
-							let y = y as u64 + top;
-							vbuf.set_grey_pixel(x, y, color);
+							for i in 0..count {
+								let off = off + i as usize;
+								let x = off % OroLogo::WIDTH;
+								let y = off / OroLogo::WIDTH;
+								let x = x as u64 + left;
+								let y = y as u64 + top;
+								vbuf.set_grey_pixel(x, y, color);
+							}
 						}
 
 						off += count as usize;
@@ -230,6 +257,29 @@ extern "Rust" fn main() {
 
 					Some(Command::Skip(count)) => {
 						off += count as usize;
+					}
+				}
+			}
+
+			// If we're fading in, we need to blit the off-screen buffer to the screen.
+			if fade_in > 0 {
+				let mut off = 0usize;
+
+				for _ in 0..OroLogo::HEIGHT {
+					for _ in 0..OroLogo::WIDTH {
+						let byte_off = off / 4;
+						let bit_off = (off % 4) * 2;
+						let lightness = unsafe { OFF_SCREEN[byte_off] >> bit_off } & 0b11;
+						let color = lightness << 6;
+						let color = color.saturating_sub(fade_in);
+
+						let x = off % OroLogo::WIDTH;
+						let y = off / OroLogo::WIDTH;
+						let x = x as u64 + left;
+						let y = y as u64 + top;
+						vbuf.set_grey_pixel(x, y, color);
+
+						off += 1;
 					}
 				}
 			}
