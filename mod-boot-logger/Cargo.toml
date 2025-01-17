@@ -1,0 +1,31 @@
+[package]
+name = "mod-boot-logger"
+version.workspace = true
+description = "Early boot logger module for the Oro operating system"
+publish = false
+edition = "2021"
+authors = [
+	"Josh Junon (https//github.com/qix-)"
+]
+homepage = "https://oro.sh"
+repository = "https://github.com/oro-os/oro"
+license = "MPL-2.0"
+
+build = "build.rs"
+
+[[bin]]
+name = "mod-boot-logger"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+
+[lints]
+workspace = true
+
+[dependencies]
+std.workspace = true
+oro-logo-rle.workspace = true
+
+[build-dependencies]
+oro = { workspace = true, features = ["build"], default-features = false }

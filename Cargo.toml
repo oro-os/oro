@@ -1,0 +1,60 @@
+[workspace.package]
+description = "The Oro Operating System kernel project"
+homepage = "https://oro.sh"
+repository = "https://github.com/oro-os/kernel"
+license = "MPL-2.0"
+version = "0.0.0"
+
+[workspace]
+resolver = "2"
+members = [
+    "mod-boot-logger",
+]
+
+[workspace.dependencies]
+std = { git = "https://github.com/oro-os/kernel", package = "oro-std", features = ["nightly", "oro"] }
+oro = { git = "https://github.com/oro-os/kernel", default-features = false }
+oro-sysabi = { git = "https://github.com/oro-os/kernel" }
+# NOTE(qix-): Once a global allocator is added, remove `default-features = false` (or at least enable
+# NOTE(qix-): the `compression` feature) as it will reduce the module size.
+oro-logo-rle = { git = "https://github.com/oro-os/oro-logo-rle", default-features = false, features = ["oro-logo-all"] }
+
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.rustdoc]
+private_doc_tests = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+missing_docs_in_private_items = "warn"
+module_name_repetitions = "allow"
+verbose_bit_mask = "allow"
+too_many_lines = "allow"
+missing_errors_doc = "allow"
+struct_field_names = "allow"
+items_after_statements = "allow"
+cast_possible_truncation = "allow" # TODO(qix-): Temporary until the virt/phys types land.
+assertions_on_constants = "allow"
+new_without_default = "allow"
+needless_doctest_main = "allow"
+tabs_in_doc_comments = "allow"
+
+[profile.dev]
+panic = "abort"            # Use "abort" panic strategy
+debug = "full"             # Full debugging symbols
+
+[profile.release]
+opt-level = 3              # Maximum optimizations
+lto = "fat"                # Perform LTO across all crates
+codegen-units = 1          # Reduce number of codegen units to increase optimizations.
+strip = true               # Strip symbols from binary
+incremental = false        # Disable incremental building
+panic = "abort"            # Use "abort" panic strategy
+debug = 0                  # Do not generate debug information
+
+[profile.relwithdebinfo]
+inherits = "release"
+debug = "full"             # Full debugging symbols
+strip = false              # Don't strip symbols from binary
