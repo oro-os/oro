@@ -36,7 +36,7 @@ fn write_bytes(bytes: &[u8]) {
 		// XXX(qix-): Hard coding the ID for a moment, bear with.
 		syscall::set!(
 			ROOT_DEBUG_OUT_V0,
-			4_294_967_296,
+			0x8000_0000_2000_0001,
 			0,
 			syscall::key!("write"),
 			word
@@ -95,7 +95,7 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (sysabi::syscall::Error, u64)> {
 			syscall::get!(
 				ROOT_BOOT_VBUF_V0,
 				// XXX(qix-): Hardcoding the ID for now, bear with.
-				4_294_967_297,
+				0x8000_0000_4000_0001,
 				idx,
 				syscall::key!($field),
 			)?
@@ -120,7 +120,7 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (sysabi::syscall::Error, u64)> {
 			syscall::set!(
 				ROOT_BOOT_VBUF_V0,
 				// XXX(qix-): Hardcoding the ID for now, bear with.
-				4_294_967_297,
+				0x8000_0000_4000_0001,
 				idx,
 				syscall::key!("!vmbase!"),
 				vbuf_addr
@@ -172,6 +172,9 @@ fn sleep_between_frame() {
 		}
 	}
 }
+
+/// Lightness values mapped to grey RGB values.
+const LIGHTNESSES: [u8; 4] = [0, 0x55, 0xAA, 0xFF];
 
 #[no_mangle]
 extern "Rust" fn main() {
@@ -240,7 +243,7 @@ extern "Rust" fn main() {
 							}
 						} else {
 							// Otherwise, we can draw directly.
-							let color = (lightness & 0b11) << 6;
+							let color = LIGHTNESSES[(lightness & 0b11) as usize];
 
 							for i in 0..count {
 								let off = off + i as usize;
@@ -270,7 +273,7 @@ extern "Rust" fn main() {
 						let byte_off = off / 4;
 						let bit_off = (off % 4) * 2;
 						let lightness = unsafe { OFF_SCREEN[byte_off] >> bit_off } & 0b11;
-						let color = lightness << 6;
+						let color = LIGHTNESSES[lightness as usize];
 						let color = color.saturating_sub(fade_in);
 
 						let x = off % OroLogo::WIDTH;
