@@ -5,8 +5,9 @@
 //! the Oro operating system.
 #![no_main]
 
+use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::os::oro::{
-	id::kernel::iface::{ROOT_BOOT_VBUF_V0, ROOT_DEBUG_OUT_V0},
+	id::kernel::iface::{KERNEL_IFACE_QUERY_BY_TYPE_V0, ROOT_BOOT_VBUF_V0, ROOT_DEBUG_OUT_V0},
 	sysabi, syscall,
 };
 
@@ -23,8 +24,29 @@ const FADE_IN_STEP: u8 = 2;
 // NOTE(qix-): (eventually) have `println!` et al. For now, we hack it in,
 // NOTE(qix-): so please do not copy this into your modules.
 fn write_bytes(bytes: &[u8]) {
+	#[doc(hidden)]
+	static DEBUG_OUT_INTERFACE_ID: AtomicU64 = AtomicU64::new(!0);
+
 	if bytes.is_empty() {
 		return;
+	}
+
+	let mut iface = DEBUG_OUT_INTERFACE_ID.load(Relaxed);
+
+	if iface == !0 {
+		iface = match syscall::get!(
+			KERNEL_IFACE_QUERY_BY_TYPE_V0,
+			KERNEL_IFACE_QUERY_BY_TYPE_V0,
+			ROOT_DEBUG_OUT_V0,
+			0
+		) {
+			Ok(iface) => iface,
+			Err(_) => {
+				return;
+			}
+		};
+
+		DEBUG_OUT_INTERFACE_ID.store(iface, Relaxed);
 	}
 
 	for chunk in bytes.chunks(8) {
@@ -33,15 +55,7 @@ fn write_bytes(bytes: &[u8]) {
 			word = (word << 8) | u64::from(*b);
 		}
 
-		// XXX(qix-): Hard coding the ID for a moment, bear with.
-		syscall::set!(
-			ROOT_DEBUG_OUT_V0,
-			0x8000_0000_2000_0001,
-			0,
-			syscall::key!("write"),
-			word
-		)
-		.unwrap();
+		syscall::set!(ROOT_DEBUG_OUT_V0, iface, 0, syscall::key!("write"), word).unwrap();
 	}
 }
 
@@ -89,13 +103,29 @@ struct Vbuf {
 ///
 /// Returns an error if any of the syscalls fail.
 fn find_video_buffer(idx: u64) -> Result<Vbuf, (sysabi::syscall::Error, u64)> {
+	// Try to find the `ROOT_BOOT_VBUF_V0` interface.
+	let boot_vbuf_iface = match syscall::get!(
+		KERNEL_IFACE_QUERY_BY_TYPE_V0,
+		KERNEL_IFACE_QUERY_BY_TYPE_V0,
+		ROOT_BOOT_VBUF_V0,
+		0
+	) {
+		Ok(iface) => {
+			write_str("found ROOT_BOOT_VBUF_V0\n");
+			iface
+		}
+		Err((err, ext)) => {
+			write_str("failed to find ROOT_BOOT_VBUF_V0\n");
+			return Err((err, ext));
+		}
+	};
+
 	#[doc(hidden)]
 	macro_rules! get_vbuf_field {
 		($field:literal) => {{
 			syscall::get!(
 				ROOT_BOOT_VBUF_V0,
-				// XXX(qix-): Hardcoding the ID for now, bear with.
-				0x8000_0000_4000_0001,
+				boot_vbuf_iface,
 				idx,
 				syscall::key!($field),
 			)?
@@ -119,8 +149,7 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (sysabi::syscall::Error, u64)> {
 		data: {
 			syscall::set!(
 				ROOT_BOOT_VBUF_V0,
-				// XXX(qix-): Hardcoding the ID for now, bear with.
-				0x8000_0000_4000_0001,
+				boot_vbuf_iface,
 				idx,
 				syscall::key!("!vmbase!"),
 				vbuf_addr
