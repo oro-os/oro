@@ -84,7 +84,7 @@ dependencies = [
 [[package]]
 name = "oro"
 version = "0.0.0"
-source = "git+https://github.com/oro-os/kernel#06dcfed53995ab920132994bd6af6d5b868e139c"
+source = "git+https://github.com/oro-os/kernel#060dca9c00b36d8759eb850956cbb67d2a11312c"
 dependencies = [
  "oro-sysabi",
 ]
@@ -104,7 +104,7 @@ dependencies = [
 [[package]]
 name = "oro-std"
 version = "0.0.0"
-source = "git+https://github.com/oro-os/kernel#06dcfed53995ab920132994bd6af6d5b868e139c"
+source = "git+https://github.com/oro-os/kernel#060dca9c00b36d8759eb850956cbb67d2a11312c"
 dependencies = [
  "oro",
 ]
@@ -112,7 +112,7 @@ dependencies = [
 [[package]]
 name = "oro-sysabi"
 version = "0.0.0"
-source = "git+https://github.com/oro-os/kernel#06dcfed53995ab920132994bd6af6d5b868e139c"
+source = "git+https://github.com/oro-os/kernel#060dca9c00b36d8759eb850956cbb67d2a11312c"
 
 [[package]]
 name = "proc-macro2"

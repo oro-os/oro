@@ -5,10 +5,12 @@
 //! the Oro operating system.
 #![no_main]
 
-use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::os::oro::{
-	id::kernel::iface::{KERNEL_IFACE_QUERY_BY_TYPE_V0, ROOT_BOOT_VBUF_V0, ROOT_DEBUG_OUT_V0},
-	sysabi, syscall,
+	debug_v0_println as println,
+	id::kernel::iface::{
+		KERNEL_IFACE_QUERY_BY_TYPE_V0, KERNEL_IFACE_QUERY_TYPE_META_V0, ROOT_BOOT_VBUF_V0,
+	},
+	syscall::{self, Error},
 };
 
 use oro_logo_rle::{Command, OroLogoData};
@@ -18,54 +20,6 @@ type OroLogo = oro_logo_rle::OroLogo<oro_logo_rle::OroLogo256x256>;
 
 /// How many steps to fade in per frame.
 const FADE_IN_STEP: u8 = 2;
-
-/// Writes a byte slice to the debug output.
-// NOTE(qix-): This module is intended to be an `oro-std` module, which will
-// NOTE(qix-): (eventually) have `println!` et al. For now, we hack it in,
-// NOTE(qix-): so please do not copy this into your modules.
-fn write_bytes(bytes: &[u8]) {
-	#[doc(hidden)]
-	static DEBUG_OUT_INTERFACE_ID: AtomicU64 = AtomicU64::new(!0);
-
-	if bytes.is_empty() {
-		return;
-	}
-
-	let mut iface = DEBUG_OUT_INTERFACE_ID.load(Relaxed);
-
-	if iface == !0 {
-		iface = match syscall::get!(
-			KERNEL_IFACE_QUERY_BY_TYPE_V0,
-			KERNEL_IFACE_QUERY_BY_TYPE_V0,
-			ROOT_DEBUG_OUT_V0,
-			0
-		) {
-			Ok(iface) => iface,
-			Err(_) => {
-				return;
-			}
-		};
-
-		DEBUG_OUT_INTERFACE_ID.store(iface, Relaxed);
-	}
-
-	for chunk in bytes.chunks(8) {
-		let mut word = 0u64;
-		for b in chunk {
-			word = (word << 8) | u64::from(*b);
-		}
-
-		syscall::set!(ROOT_DEBUG_OUT_V0, iface, 0, syscall::key!("write"), word).unwrap();
-	}
-}
-
-/// Writes a string to the debug output.
-// NOTE(qix-): This module is intended to be an `oro-std` module, which will
-// NOTE(qix-): (eventually) have `println!` et al. For now, we hack it in,
-// NOTE(qix-): so please do not copy this into your modules.
-fn write_str(s: &str) {
-	write_bytes(s.as_bytes());
-}
 
 /// A video buffer object.
 ///
@@ -102,7 +56,7 @@ struct Vbuf {
 /// given its index.
 ///
 /// Returns an error if any of the syscalls fail.
-fn find_video_buffer(idx: u64) -> Result<Vbuf, (sysabi::syscall::Error, u64)> {
+fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 	// Try to find the `ROOT_BOOT_VBUF_V0` interface.
 	let boot_vbuf_iface = match syscall::get!(
 		KERNEL_IFACE_QUERY_BY_TYPE_V0,
@@ -111,11 +65,11 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (sysabi::syscall::Error, u64)> {
 		0
 	) {
 		Ok(iface) => {
-			write_str("found ROOT_BOOT_VBUF_V0\n");
+			println!("found ROOT_BOOT_VBUF_V0: {iface:#X}");
 			iface
 		}
 		Err((err, ext)) => {
-			write_str("failed to find ROOT_BOOT_VBUF_V0\n");
+			println!("failed to find ROOT_BOOT_VBUF_V0: {err:?}[{ext}]");
 			return Err((err, ext));
 		}
 	};
@@ -207,27 +161,43 @@ const LIGHTNESSES: [u8; 4] = [0, 0x55, 0xAA, 0xFF];
 
 #[no_mangle]
 extern "Rust" fn main() {
-	write_str("looking for vbuf 0...\n");
+	match syscall::get!(
+		KERNEL_IFACE_QUERY_TYPE_META_V0,
+		KERNEL_IFACE_QUERY_TYPE_META_V0,
+		ROOT_BOOT_VBUF_V0,
+		syscall::key!("icount")
+	) {
+		Ok(ifaces) => {
+			println!("ring has {ifaces} ROOT_BOOT_VBUF_V0 interface(s)");
+		}
+		Err((err, ext)) => {
+			println!("could not get ROOT_BOOT_VBUF_V0 interface count: {err:?}[{ext}]");
+			return;
+		}
+	}
+
+	println!("looking for vbuf 0...");
+
 	if let Ok(vbuf) = find_video_buffer(0) {
-		write_str("found vbuf 0\n");
+		println!("found vbuf 0");
 
 		if (vbuf.bits_per_pixel & 0b111) != 0 {
-			write_str("vbuf 0 is not byte-aligned\n");
+			println!("vbuf 0 is not byte-aligned");
 			return;
 		}
 
 		if vbuf.red_mask != 8 {
-			write_str("vbuf 0 red channel is not 8 bits\n");
+			println!("vbuf 0 red channel is not 8 bits");
 			return;
 		}
 
 		if vbuf.green_mask != 8 {
-			write_str("vbuf 0 green channel is not 8 bits\n");
+			println!("vbuf 0 green channel is not 8 bits");
 			return;
 		}
 
 		if vbuf.blue_mask != 8 {
-			write_str("vbuf 0 blue channel is not 8 bits\n");
+			println!("vbuf 0 blue channel is not 8 bits");
 			return;
 		}
 
@@ -250,7 +220,7 @@ extern "Rust" fn main() {
 			loop {
 				match iter.next() {
 					None => {
-						write_str("Oro logo exhausted commands (shouldn't happen)");
+						println!("Oro logo exhausted commands (shouldn't happen)");
 						return;
 					}
 
@@ -319,6 +289,6 @@ extern "Rust" fn main() {
 			sleep_between_frame(/*1000 / OroLogo::FPS as u64*/);
 		}
 	} else {
-		write_str("failed to find vbuf 0\n");
+		println!("failed to find vbuf 0");
 	}
 }
