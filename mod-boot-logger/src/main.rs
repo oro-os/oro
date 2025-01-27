@@ -6,11 +6,13 @@
 #![no_main]
 
 use std::os::oro::{
-	debug_v0_println as println,
-	id::kernel::iface::{
+	debug_out_v0_println as println,
+	id::iface::{
 		KERNEL_IFACE_QUERY_BY_TYPE_V0, KERNEL_IFACE_QUERY_TYPE_META_V0, ROOT_BOOT_VBUF_V0,
 	},
-	syscall::{self, Error},
+	key,
+	syscall::Error,
+	syscall_get, syscall_set,
 };
 
 use oro_logo_rle::{Command, OroLogoData};
@@ -58,7 +60,7 @@ struct Vbuf {
 /// Returns an error if any of the syscalls fail.
 fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 	// Try to find the `ROOT_BOOT_VBUF_V0` interface.
-	let boot_vbuf_iface = match syscall::get!(
+	let boot_vbuf_iface = match syscall_get!(
 		KERNEL_IFACE_QUERY_BY_TYPE_V0,
 		KERNEL_IFACE_QUERY_BY_TYPE_V0,
 		ROOT_BOOT_VBUF_V0,
@@ -76,14 +78,7 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 
 	#[doc(hidden)]
 	macro_rules! get_vbuf_field {
-		($field:literal) => {{
-			syscall::get!(
-				ROOT_BOOT_VBUF_V0,
-				boot_vbuf_iface,
-				idx,
-				syscall::key!($field),
-			)?
-		}};
+		($field:literal) => {{ syscall_get!(ROOT_BOOT_VBUF_V0, boot_vbuf_iface, idx, key!($field),)? }};
 	}
 
 	let vbuf_addr: u64 = 0x600_0000_0000 + idx * 0x1_0000_0000;
@@ -101,11 +96,11 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 		green_mask: get_vbuf_field!("grn_size"),
 		blue_mask: get_vbuf_field!("blu_size"),
 		data: {
-			syscall::set!(
+			syscall_set!(
 				ROOT_BOOT_VBUF_V0,
 				boot_vbuf_iface,
 				idx,
-				syscall::key!("!vmbase!"),
+				key!("!vmbase!"),
 				vbuf_addr
 			)?;
 
@@ -161,11 +156,11 @@ const LIGHTNESSES: [u8; 4] = [0, 0x55, 0xAA, 0xFF];
 
 #[no_mangle]
 extern "Rust" fn main() {
-	match syscall::get!(
+	match syscall_get!(
 		KERNEL_IFACE_QUERY_TYPE_META_V0,
 		KERNEL_IFACE_QUERY_TYPE_META_V0,
 		ROOT_BOOT_VBUF_V0,
-		syscall::key!("icount")
+		key!("icount")
 	) {
 		Ok(ifaces) => {
 			println!("ring has {ifaces} ROOT_BOOT_VBUF_V0 interface(s)");
