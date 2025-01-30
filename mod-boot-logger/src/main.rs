@@ -71,7 +71,10 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 			iface
 		}
 		Err((err, ext)) => {
-			println!("failed to find ROOT_BOOT_VBUF_V0: {err:?}[{ext}]");
+			println!(
+				"failed to find ROOT_BOOT_VBUF_V0: {err:?}[{:?}]",
+				::oro::Key(&ext)
+			);
 			return Err((err, ext));
 		}
 	};
@@ -81,7 +84,7 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 		($field:literal) => {{ syscall_get!(ROOT_BOOT_VBUF_V0, boot_vbuf_iface, idx, key!($field),)? }};
 	}
 
-	let vbuf_addr: u64 = 0x600_0000_0000 + idx * 0x1_0000_0000;
+	let vbuf_addr: u64 = 0x3C00_0000_0000 + idx * 0x1_0000_0000;
 
 	let bits_per_pixel = get_vbuf_field!("bit_pp");
 	let bytes_per_pixel = bits_per_pixel / 8;
@@ -166,124 +169,131 @@ extern "Rust" fn main() {
 			println!("ring has {ifaces} ROOT_BOOT_VBUF_V0 interface(s)");
 		}
 		Err((err, ext)) => {
-			println!("could not get ROOT_BOOT_VBUF_V0 interface count: {err:?}[{ext}]");
+			println!(
+				"could not get ROOT_BOOT_VBUF_V0 interface count: {err:?}[{:?}]",
+				::oro::Key(&ext)
+			);
 			return;
 		}
 	}
 
 	println!("looking for vbuf 0...");
 
-	if let Ok(vbuf) = find_video_buffer(0) {
-		println!("found vbuf 0");
-
-		if (vbuf.bits_per_pixel & 0b111) != 0 {
-			println!("vbuf 0 is not byte-aligned");
+	let vbuf = match find_video_buffer(0) {
+		Ok(vbuf) => {
+			println!("found vbuf 0");
+			vbuf
+		}
+		Err((err, ext)) => {
+			println!("failed to find vbuf 0: {err:?}[{:?}]", ::oro::Key(&ext));
 			return;
 		}
+	};
 
-		if vbuf.red_mask != 8 {
-			println!("vbuf 0 red channel is not 8 bits");
-			return;
-		}
+	if (vbuf.bits_per_pixel & 0b111) != 0 {
+		println!("vbuf 0 is not byte-aligned");
+		return;
+	}
 
-		if vbuf.green_mask != 8 {
-			println!("vbuf 0 green channel is not 8 bits");
-			return;
-		}
+	if vbuf.red_mask != 8 {
+		println!("vbuf 0 red channel is not 8 bits");
+		return;
+	}
 
-		if vbuf.blue_mask != 8 {
-			println!("vbuf 0 blue channel is not 8 bits");
-			return;
-		}
+	if vbuf.green_mask != 8 {
+		println!("vbuf 0 green channel is not 8 bits");
+		return;
+	}
 
-		let left = (vbuf.width >> 1) - (OroLogo::WIDTH as u64 >> 1);
-		let top = (vbuf.height >> 1) - (OroLogo::HEIGHT as u64 >> 1);
+	if vbuf.blue_mask != 8 {
+		println!("vbuf 0 blue channel is not 8 bits");
+		return;
+	}
 
-		let mut iter = OroLogo::new();
+	let left = (vbuf.width >> 1) - (OroLogo::WIDTH as u64 >> 1);
+	let top = (vbuf.height >> 1) - (OroLogo::HEIGHT as u64 >> 1);
 
-		let mut fade_in = 255u8;
+	let mut iter = OroLogo::new();
+
+	let mut fade_in = 255u8;
+
+	loop {
+		let mut off = 0usize;
+
+		#[doc(hidden)]
+		static mut OFF_SCREEN: [u8; (OroLogo::WIDTH * OroLogo::HEIGHT) / 4] =
+			[0; { (OroLogo::WIDTH * OroLogo::HEIGHT) / 4 }];
+
+		fade_in = fade_in.saturating_sub(FADE_IN_STEP);
 
 		loop {
-			let mut off = 0usize;
+			match iter.next() {
+				None => {
+					println!("Oro logo exhausted commands (shouldn't happen)");
+					return;
+				}
 
-			#[doc(hidden)]
-			static mut OFF_SCREEN: [u8; (OroLogo::WIDTH * OroLogo::HEIGHT) / 4] =
-				[0; { (OroLogo::WIDTH * OroLogo::HEIGHT) / 4 }];
+				Some(Command::End) => break,
 
-			fade_in = fade_in.saturating_sub(FADE_IN_STEP);
-
-			loop {
-				match iter.next() {
-					None => {
-						println!("Oro logo exhausted commands (shouldn't happen)");
-						return;
-					}
-
-					Some(Command::End) => break,
-
-					Some(Command::Draw(count, lightness)) => {
-						if fade_in > 0 {
-							// We need to draw first to the off-screen buffer,
-							// then blit it to the screen with the multiplier.
-							for i in 0..count {
-								let off = off + i as usize;
-								let byte_off = off / 4;
-								let bit_off = (off % 4) * 2;
-								unsafe {
-									OFF_SCREEN[byte_off] =
-										OFF_SCREEN[byte_off] & !(0b11 << bit_off)
-											| ((lightness & 0b11) << bit_off);
-								}
-							}
-						} else {
-							// Otherwise, we can draw directly.
-							let color = LIGHTNESSES[(lightness & 0b11) as usize];
-
-							for i in 0..count {
-								let off = off + i as usize;
-								let x = off % OroLogo::WIDTH;
-								let y = off / OroLogo::WIDTH;
-								let x = x as u64 + left;
-								let y = y as u64 + top;
-								vbuf.set_grey_pixel(x, y, color);
+				Some(Command::Draw(count, lightness)) => {
+					if fade_in > 0 {
+						// We need to draw first to the off-screen buffer,
+						// then blit it to the screen with the multiplier.
+						for i in 0..count {
+							let off = off + i as usize;
+							let byte_off = off / 4;
+							let bit_off = (off % 4) * 2;
+							unsafe {
+								OFF_SCREEN[byte_off] = OFF_SCREEN[byte_off] & !(0b11 << bit_off)
+									| ((lightness & 0b11) << bit_off);
 							}
 						}
+					} else {
+						// Otherwise, we can draw directly.
+						let color = LIGHTNESSES[(lightness & 0b11) as usize];
 
-						off += count as usize;
+						for i in 0..count {
+							let off = off + i as usize;
+							let x = off % OroLogo::WIDTH;
+							let y = off / OroLogo::WIDTH;
+							let x = x as u64 + left;
+							let y = y as u64 + top;
+							vbuf.set_grey_pixel(x, y, color);
+						}
 					}
 
-					Some(Command::Skip(count)) => {
-						off += count as usize;
-					}
+					off += count as usize;
+				}
+
+				Some(Command::Skip(count)) => {
+					off += count as usize;
 				}
 			}
-
-			// If we're fading in, we need to blit the off-screen buffer to the screen.
-			if fade_in > 0 {
-				let mut off = 0usize;
-
-				for _ in 0..OroLogo::HEIGHT {
-					for _ in 0..OroLogo::WIDTH {
-						let byte_off = off / 4;
-						let bit_off = (off % 4) * 2;
-						let lightness = unsafe { OFF_SCREEN[byte_off] >> bit_off } & 0b11;
-						let color = LIGHTNESSES[lightness as usize];
-						let color = color.saturating_sub(fade_in);
-
-						let x = off % OroLogo::WIDTH;
-						let y = off / OroLogo::WIDTH;
-						let x = x as u64 + left;
-						let y = y as u64 + top;
-						vbuf.set_grey_pixel(x, y, color);
-
-						off += 1;
-					}
-				}
-			}
-
-			sleep_between_frame(/*1000 / OroLogo::FPS as u64*/);
 		}
-	} else {
-		println!("failed to find vbuf 0");
+
+		// If we're fading in, we need to blit the off-screen buffer to the screen.
+		if fade_in > 0 {
+			let mut off = 0usize;
+
+			for _ in 0..OroLogo::HEIGHT {
+				for _ in 0..OroLogo::WIDTH {
+					let byte_off = off / 4;
+					let bit_off = (off % 4) * 2;
+					let lightness = unsafe { OFF_SCREEN[byte_off] >> bit_off } & 0b11;
+					let color = LIGHTNESSES[lightness as usize];
+					let color = color.saturating_sub(fade_in);
+
+					let x = off % OroLogo::WIDTH;
+					let y = off / OroLogo::WIDTH;
+					let x = x as u64 + left;
+					let y = y as u64 + top;
+					vbuf.set_grey_pixel(x, y, color);
+
+					off += 1;
+				}
+			}
+		}
+
+		sleep_between_frame(/*1000 / OroLogo::FPS as u64*/);
 	}
 }

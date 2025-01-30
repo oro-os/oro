@@ -26,7 +26,7 @@ workspace = true
 [dependencies]
 std.workspace = true
 oro-logo-rle.workspace = true
-oro = { workspace = true, default-features = false, features = ["panic_debug_out_v0", "module"] }
+oro = { workspace = true, default-features = false, features = ["panic_debug_out_v0", "module", "nightly"] }
 
 [build-dependencies]
 oro = { workspace = true, features = ["build"], default-features = false }
