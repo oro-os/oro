@@ -12,8 +12,7 @@ members = [
 ]
 
 [workspace.dependencies]
-std = { git = "https://github.com/oro-os/kernel", package = "oro-std", features = ["nightly", "oro"] }
-oro = { git = "https://github.com/oro-os/kernel", default-features = false, features = ["panic_debug_out_v0", "module"] }
+oro = { git = "https://github.com/oro-os/kernel", features = ["nightly"] }
 # NOTE(qix-): Once a global allocator is added, remove `default-features = false` (or at least enable
 # NOTE(qix-): the `compression` feature) as it will reduce the module size.
 oro-logo-rle = { git = "https://github.com/oro-os/oro-logo-rle", default-features = false, features = ["oro-logo-all"] }
@@ -43,6 +42,7 @@ tabs_in_doc_comments = "allow"
 [profile.dev]
 panic = "abort"            # Use "abort" panic strategy
 debug = "full"             # Full debugging symbols
+strip = false              # Be sure not to strip anything
 
 [profile.dev.build-override]
 opt-level = 3              # Maximum optimizations

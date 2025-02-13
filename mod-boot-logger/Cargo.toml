@@ -11,22 +11,9 @@ homepage = "https://oro.sh"
 repository = "https://github.com/oro-os/oro"
 license = "MPL-2.0"
 
-build = "build.rs"
-
-[[bin]]
-name = "mod-boot-logger"
-path = "src/main.rs"
-test = false
-doctest = false
-bench = false
-
 [lints]
 workspace = true
 
 [dependencies]
-std.workspace = true
 oro-logo-rle.workspace = true
-oro = { workspace = true, default-features = false, features = ["panic_debug_out_v0", "module", "nightly"] }
-
-[build-dependencies]
-oro = { workspace = true, features = ["build"], default-features = false }
+oro.workspace = true

@@ -3,9 +3,8 @@
 //! This module does its best to provide graphical (or at least
 //! visual) logging output during the earlier boot stages of
 //! the Oro operating system.
-#![no_main]
 
-use std::os::oro::{
+use oro::{
 	debug_out_v0_println as println,
 	id::iface::{
 		KERNEL_IFACE_QUERY_BY_TYPE_V0, KERNEL_IFACE_QUERY_TYPE_META_V0, ROOT_BOOT_VBUF_V0,
@@ -14,7 +13,6 @@ use std::os::oro::{
 	syscall::Error,
 	syscall_get, syscall_set,
 };
-
 use oro_logo_rle::{Command, OroLogoData};
 
 /// The Oro logo, aliased to a specific resolution.
@@ -157,8 +155,7 @@ fn sleep_between_frame() {
 /// Lightness values mapped to grey RGB values.
 const LIGHTNESSES: [u8; 4] = [0, 0x55, 0xAA, 0xFF];
 
-#[no_mangle]
-extern "Rust" fn main() {
+fn main() {
 	match syscall_get!(
 		KERNEL_IFACE_QUERY_TYPE_META_V0,
 		KERNEL_IFACE_QUERY_TYPE_META_V0,
