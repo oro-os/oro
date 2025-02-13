@@ -9,42 +9,20 @@ env:
   RUST_BACKTRACE: full
 
 jobs:
-  lint-rustfmt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: 'true'
-      - uses: ./.github/actions/rust
-      - name: Lint (rustfmt)
-        run: cargo fmt --all -- --check
-  lint-clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: 'true'
-      - uses: ./.github/actions/rust
-      - name: Lint (clippy)
-        run: cargo clippy -- -D warnings
-  lint-docs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: 'true'
-      - uses: ./.github/actions/rust
-      - name: Lint (rustdoc)
-        run: env RUSTFLAGS="-D warnings" RUSTDOCFLAGS="-D rustdoc::all" cargo oro-doc
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        profile: ["dev", "release"]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: 'true'
-      - uses: ./.github/actions/rust
-      - name: Build
-        run: cargo build --profile ${{ matrix.profile }}
+      - uses: oro-os/fetch-oro-toolchain@master
+      - name: Lint (clippy)
+        run: cargo clippy -- -D warnings
+      - name: Lint (rustfmt)
+        run: cargo fmt --all -- --check
+      - name: Lint (rustdoc)
+        run: env RUSTFLAGS="-D warnings" RUSTDOCFLAGS="-D rustdoc::all" cargo oro-doc
+      - name: Build (dev)
+        run: cargo build --profile dev
+      - name: Build (release)
+        run: cargo build --profile release
