@@ -5,7 +5,6 @@
 //! the Oro operating system.
 
 use oro::{
-	debug_out_v0_println as println,
 	id::iface::{
 		KERNEL_IFACE_QUERY_BY_TYPE_V0, KERNEL_IFACE_QUERY_TYPE_META_V0, ROOT_BOOT_VBUF_V0,
 	},
