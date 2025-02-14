@@ -56,57 +56,62 @@ struct Vbuf {
 ///
 /// Returns an error if any of the syscalls fail.
 fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
-	// Try to find the `ROOT_BOOT_VBUF_V0` interface.
-	let boot_vbuf_iface = match syscall_get!(
-		KERNEL_IFACE_QUERY_BY_TYPE_V0,
-		KERNEL_IFACE_QUERY_BY_TYPE_V0,
-		ROOT_BOOT_VBUF_V0,
-		0
-	) {
-		Ok(iface) => {
-			println!("found ROOT_BOOT_VBUF_V0: {iface:#X}");
-			iface
-		}
-		Err((err, ext)) => {
-			println!(
-				"failed to find ROOT_BOOT_VBUF_V0: {err:?}[{:?}]",
-				::oro::Key(&ext)
-			);
-			return Err((err, ext));
-		}
-	};
+	// SAFETY: This is inherently unsafe but we're following the
+	// SAFETY: guidelines for syscalls.
+	unsafe {
+		// Try to find the `ROOT_BOOT_VBUF_V0` interface.
+		// SAFETY: Just a query, always safe.
+		let boot_vbuf_iface = match syscall_get!(
+			KERNEL_IFACE_QUERY_BY_TYPE_V0,
+			KERNEL_IFACE_QUERY_BY_TYPE_V0,
+			ROOT_BOOT_VBUF_V0,
+			0
+		) {
+			Ok(iface) => {
+				println!("found ROOT_BOOT_VBUF_V0: {iface:#X}");
+				iface
+			}
+			Err((err, ext)) => {
+				println!(
+					"failed to find ROOT_BOOT_VBUF_V0: {err:?}[{:?}]",
+					::oro::Key(&ext)
+				);
+				return Err((err, ext));
+			}
+		};
 
-	#[doc(hidden)]
-	macro_rules! get_vbuf_field {
-		($field:literal) => {{ syscall_get!(ROOT_BOOT_VBUF_V0, boot_vbuf_iface, idx, key!($field),)? }};
+		#[doc(hidden)]
+		macro_rules! get_vbuf_field {
+			($field:literal) => {{ syscall_get!(ROOT_BOOT_VBUF_V0, boot_vbuf_iface, idx, key!($field),)? }};
+		}
+
+		let vbuf_addr: u64 = 0x3C00_0000_0000 + idx * 0x1_0000_0000;
+
+		let bits_per_pixel = get_vbuf_field!("bit_pp");
+		let bytes_per_pixel = bits_per_pixel / 8;
+
+		Ok(Vbuf {
+			width: get_vbuf_field!("width"),
+			height: get_vbuf_field!("height"),
+			bits_per_pixel,
+			bytes_per_pixel,
+			stride: get_vbuf_field!("pitch"),
+			red_mask: get_vbuf_field!("red_size"),
+			green_mask: get_vbuf_field!("grn_size"),
+			blue_mask: get_vbuf_field!("blu_size"),
+			data: {
+				syscall_set!(
+					ROOT_BOOT_VBUF_V0,
+					boot_vbuf_iface,
+					idx,
+					key!("!vmbase!"),
+					vbuf_addr
+				)?;
+
+				vbuf_addr as *mut u8
+			},
+		})
 	}
-
-	let vbuf_addr: u64 = 0x3C00_0000_0000 + idx * 0x1_0000_0000;
-
-	let bits_per_pixel = get_vbuf_field!("bit_pp");
-	let bytes_per_pixel = bits_per_pixel / 8;
-
-	Ok(Vbuf {
-		width: get_vbuf_field!("width"),
-		height: get_vbuf_field!("height"),
-		bits_per_pixel,
-		bytes_per_pixel,
-		stride: get_vbuf_field!("pitch"),
-		red_mask: get_vbuf_field!("red_size"),
-		green_mask: get_vbuf_field!("grn_size"),
-		blue_mask: get_vbuf_field!("blu_size"),
-		data: {
-			syscall_set!(
-				ROOT_BOOT_VBUF_V0,
-				boot_vbuf_iface,
-				idx,
-				key!("!vmbase!"),
-				vbuf_addr
-			)?;
-
-			vbuf_addr as *mut u8
-		},
-	})
 }
 
 impl Vbuf {
@@ -155,12 +160,15 @@ fn sleep_between_frame() {
 const LIGHTNESSES: [u8; 4] = [0, 0x55, 0xAA, 0xFF];
 
 fn main() {
-	match syscall_get!(
-		KERNEL_IFACE_QUERY_TYPE_META_V0,
-		KERNEL_IFACE_QUERY_TYPE_META_V0,
-		ROOT_BOOT_VBUF_V0,
-		key!("icount")
-	) {
+	// SAFETY: Just a query, always safe.
+	match unsafe {
+		syscall_get!(
+			KERNEL_IFACE_QUERY_TYPE_META_V0,
+			KERNEL_IFACE_QUERY_TYPE_META_V0,
+			ROOT_BOOT_VBUF_V0,
+			key!("icount")
+		)
+	} {
 		Ok(ifaces) => {
 			println!("ring has {ifaces} ROOT_BOOT_VBUF_V0 interface(s)");
 		}

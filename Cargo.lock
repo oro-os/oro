@@ -65,9 +65,9 @@ dependencies = [
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8402cab7aefae129c6977bb0ff1b8fd9a04eb5b51efc50a70bea51cda0c7924"
+checksum = "b3b1c9bd4fe1f0f8b387f6eb9eb3b4a1aa26185e5750efb9140301703f62cd1b"
 dependencies = [
  "adler2",
 ]
@@ -83,7 +83,7 @@ dependencies = [
 [[package]]
 name = "oro"
 version = "0.0.0"
-source = "git+https://github.com/oro-os/kernel#9b158bc924d265bb0dbb91e547ecab639f4403e1"
+source = "git+https://github.com/oro-os/kernel#324391ac5e95f629b6771c8f25a55cdf6da29d00"
 
 [[package]]
 name = "oro-logo-rle"
