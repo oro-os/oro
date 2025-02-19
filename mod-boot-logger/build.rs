@@ -48,7 +48,7 @@ fn main() {
 		if let Some(bb) = glyph.pixel_bounding_box() {
 			glyph.draw(|x, y, v| {
 				let x = x_base + x as usize + bb.min.x.max(0) as usize;
-				let y = y as i32 + bb.min.y + y_baseline as i32;
+				let y = y as i32 + bb.min.y + y_baseline;
 
 				if y < 0 || y >= font_height as i32 {
 					return;
@@ -56,7 +56,7 @@ fn main() {
 
 				let y = y as usize;
 
-				let Some(row) = rows.get_mut(y as usize) else {
+				let Some(row) = rows.get_mut(y) else {
 					return;
 				};
 
