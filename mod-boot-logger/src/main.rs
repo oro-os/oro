@@ -14,11 +14,16 @@ use oro::{
 };
 use oro_logo_rle::{Command, OroLogoData};
 
+mod font_rasterizer;
+
 /// The Oro logo, aliased to a specific resolution.
 type OroLogo = oro_logo_rle::OroLogo<oro_logo_rle::OroLogo256x256>;
 
 /// How many steps to fade in per frame.
 const FADE_IN_STEP: u8 = 2;
+
+/// Lightness values mapped to grey RGB values.
+const LIGHTNESSES: [u8; 4] = [0, 0x55, 0xAA, 0xFF];
 
 /// A video buffer object.
 ///
@@ -156,9 +161,6 @@ fn sleep_between_frame() {
 	}
 }
 
-/// Lightness values mapped to grey RGB values.
-const LIGHTNESSES: [u8; 4] = [0, 0x55, 0xAA, 0xFF];
-
 fn main() {
 	// SAFETY: Just a query, always safe.
 	match unsafe {
@@ -212,6 +214,25 @@ fn main() {
 	if vbuf.blue_mask != 8 {
 		println!("vbuf 0 blue channel is not 8 bits");
 		return;
+	}
+
+	// XXX draw hello
+	let mut xoff = 0;
+	for c in "Hello, Oro! \
+	          abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$^%^&*()_-[]{}'\"\\\
+	          |.<>,?/"
+		.chars()
+	{
+		let iter = font_rasterizer::render_glyph(c)
+			.or_else(|| font_rasterizer::render_glyph('?'))
+			.expect("missing glyph");
+		let this_xoff = xoff;
+		xoff += iter.width();
+		for (x, y, v) in iter {
+			let x = x as u64;
+			let y = y as u64;
+			vbuf.set_grey_pixel(this_xoff as u64 + x, y, v);
+		}
 	}
 
 	let left = (vbuf.width >> 1) - (OroLogo::WIDTH as u64 >> 1);

@@ -11,9 +11,16 @@ homepage = "https://oro.sh"
 repository = "https://github.com/oro-os/oro"
 license = "MPL-2.0"
 
+build = "build.rs"
+
 [lints]
 workspace = true
 
 [dependencies]
 oro-logo-rle.workspace = true
 oro.workspace = true
+unicode-normalization = { version = "0.1.24", default-features = false }
+
+[build-dependencies]
+rusttype = "0.9.3"
+quote = "1.0.38"
