@@ -3,7 +3,7 @@ name = "mod-boot-logger"
 version.workspace = true
 description = "Early boot logger module for the Oro operating system"
 publish = false
-edition = "2021"
+edition = "2024"
 authors = [
 	"Josh Junon (https//github.com/qix-)"
 ]
