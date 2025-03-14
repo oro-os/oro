@@ -92,7 +92,7 @@ dependencies = [
 [[package]]
 name = "oro"
 version = "0.0.0"
-source = "git+https://github.com/oro-os/kernel#324391ac5e95f629b6771c8f25a55cdf6da29d00"
+source = "git+https://github.com/oro-os/kernel#e5999feade21f86d40e470a55f6b4d31137170db"
 
 [[package]]
 name = "oro-logo-rle"

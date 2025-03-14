@@ -3,11 +3,11 @@
 //! This module does its best to provide graphical (or at least
 //! visual) logging output during the earlier boot stages of
 //! the Oro operating system.
+#![expect(clippy::many_single_char_names)]
 
 use oro::{
-	id::iface::{
-		KERNEL_IFACE_QUERY_BY_TYPE_V0, KERNEL_IFACE_QUERY_TYPE_META_V0, ROOT_BOOT_VBUF_V0,
-	},
+	LazyIfaceId,
+	id::iface::{KERNEL_IFACE_QUERY_TYPE_META_V0, ROOT_BOOT_VBUF_V0, ROOT_DEBUG_OUT_V0},
 	key,
 	syscall::Error,
 	syscall_get, syscall_set,
@@ -17,7 +17,7 @@ use oro_logo_rle::{Command, OroLogoData};
 mod font_rasterizer;
 
 /// The Oro logo, aliased to a specific resolution.
-type OroLogo = oro_logo_rle::OroLogo<oro_logo_rle::OroLogo256x256>;
+type OroLogo = oro_logo_rle::OroLogo<oro_logo_rle::OroLogo64x64>;
 
 /// How many steps to fade in per frame.
 const FADE_IN_STEP: u8 = 2;
@@ -56,6 +56,11 @@ struct Vbuf {
 	data: *mut u8,
 }
 
+/// The root ring debug output interface ID.
+static DEBUG_OUT_IFACE: LazyIfaceId<ROOT_DEBUG_OUT_V0> = LazyIfaceId::new();
+/// The root ring video buffer interface ID.
+static VBUF_IFACE: LazyIfaceId<ROOT_BOOT_VBUF_V0> = LazyIfaceId::new();
+
 /// Attempts to fetch information for, and map in, a video buffer from the kernel
 /// given its index.
 ///
@@ -64,30 +69,13 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 	// SAFETY: This is inherently unsafe but we're following the
 	// SAFETY: guidelines for syscalls.
 	unsafe {
-		// Try to find the `ROOT_BOOT_VBUF_V0` interface.
-		// SAFETY: Just a query, always safe.
-		let boot_vbuf_iface = match syscall_get!(
-			KERNEL_IFACE_QUERY_BY_TYPE_V0,
-			KERNEL_IFACE_QUERY_BY_TYPE_V0,
-			ROOT_BOOT_VBUF_V0,
-			0
-		) {
-			Ok(iface) => {
-				println!("found ROOT_BOOT_VBUF_V0: {iface:#X}");
-				iface
-			}
-			Err((err, ext)) => {
-				println!(
-					"failed to find ROOT_BOOT_VBUF_V0: {err:?}[{:?}]",
-					::oro::Key(&ext)
-				);
-				return Err((err, ext));
-			}
-		};
+		let root_vbuf_iface = VBUF_IFACE
+			.get()
+			.expect("failed to retrieve root ring video buffer interface");
 
 		#[doc(hidden)]
 		macro_rules! get_vbuf_field {
-			($field:literal) => {{ syscall_get!(ROOT_BOOT_VBUF_V0, boot_vbuf_iface, idx, key!($field),)? }};
+			($field:literal) => {{ syscall_get!(ROOT_BOOT_VBUF_V0, root_vbuf_iface, idx, key!($field),)? }};
 		}
 
 		let vbuf_addr: u64 = 0x3C00_0000_0000 + idx * 0x1_0000_0000;
@@ -107,7 +95,7 @@ fn find_video_buffer(idx: u64) -> Result<Vbuf, (Error, u64)> {
 			data: {
 				syscall_set!(
 					ROOT_BOOT_VBUF_V0,
-					boot_vbuf_iface,
+					root_vbuf_iface,
 					idx,
 					key!("!vmbase!"),
 					vbuf_addr
@@ -146,6 +134,65 @@ impl Vbuf {
 			*(base.offset(2)) = level;
 		}
 	}
+
+	/// Draws a vertical line.
+	fn draw_vline(&self, x: u64, y1: u64, y2: u64, level: u8) {
+		if x >= self.width || y1 >= self.height {
+			return;
+		}
+
+		let y2 = y2.clamp(y1, self.height - 1);
+
+		for y in y1..=y2 {
+			// SAFETY: We properly check the bounds of the draw above.
+			unsafe {
+				self.set_grey_pixel_unchecked(x, y, level);
+			}
+		}
+	}
+
+	/// Draws a horizontal line.
+	fn draw_hline(&self, x1: u64, x2: u64, y: u64, level: u8) {
+		if x1 >= self.width || y >= self.height {
+			return;
+		}
+
+		let x2 = x2.clamp(x1, self.width - 1);
+
+		for x in x1..=x2 {
+			// SAFETY: We properly check the bounds of the draw above.
+			unsafe {
+				self.set_grey_pixel_unchecked(x, y, level);
+			}
+		}
+	}
+
+	/// Draws a box.
+	fn draw_box(&self, x1: u64, y1: u64, x2: u64, y2: u64, level: u8) {
+		self.draw_hline(x1, x2, y1, level);
+		self.draw_hline(x1, x2, y2, level);
+		self.draw_vline(x1, y1, y2, level);
+		self.draw_vline(x2, y1, y2, level);
+	}
+
+	/// Fills an area with a level.
+	fn fill_box(&self, x1: u64, y1: u64, x2: u64, y2: u64, level: u8) {
+		if x1 >= self.width || y1 >= self.height {
+			return;
+		}
+
+		let x2 = x2.clamp(x1, self.width - 1);
+		let y2 = y2.clamp(y1, self.height - 1);
+
+		for y in y1..=y2 {
+			for x in x1..=x2 {
+				// SAFETY: We properly check the bounds of the draw above.
+				unsafe {
+					self.set_grey_pixel_unchecked(x, y, level);
+				}
+			}
+		}
+	}
 }
 
 // Sleeps between a frame.
@@ -154,7 +201,7 @@ impl Vbuf {
 #[doc(hidden)]
 fn sleep_between_frame() {
 	// TODO(qix-): Implement a proper sleep syscall.
-	for _ in 0..100_000_000 {
+	for _ in 0..1_000_000 {
 		unsafe {
 			core::arch::asm!("nop");
 		}
@@ -216,31 +263,29 @@ fn main() {
 		return;
 	}
 
-	// XXX draw hello
-	let mut xoff = 0;
-	for c in "Hello, Oro! \
-	          abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$^%^&*()_-[]{}'\"\\\
-	          |.<>,?/"
-		.chars()
-	{
-		let iter = font_rasterizer::render_glyph(c)
-			.or_else(|| font_rasterizer::render_glyph('?'))
-			.expect("missing glyph");
-		let this_xoff = xoff;
-		xoff += iter.width();
-		for (x, y, v) in iter {
-			let x = x as u64;
-			let y = y as u64;
-			vbuf.set_grey_pixel(this_xoff as u64 + x, y, v);
-		}
-	}
+	vbuf.draw_box(3, 3, vbuf.width - 3, vbuf.height - 3, 0x77);
 
-	let left = (vbuf.width >> 1) - (OroLogo::WIDTH as u64 >> 1);
-	let top = (vbuf.height >> 1) - (OroLogo::HEIGHT as u64 >> 1);
+	let left = vbuf.width - (OroLogo::WIDTH as u64) - 5;
+	let top = vbuf.height - (OroLogo::HEIGHT as u64) - 5;
+
+	let text_right: usize = vbuf.width as usize - 15 - OroLogo::WIDTH;
+	let text_left: usize = 15;
+	let text_top: usize = 5;
+	let text_bottom: usize = vbuf.height as usize - 5;
 
 	let mut iter = OroLogo::new();
 
 	let mut fade_in = 255u8;
+
+	let mut text_x: usize = 0;
+	let mut text_y: usize = 0;
+
+	let mut cursor_y = 0;
+	let mut last_cursor_y = 0;
+	let mut cursor_level = (101u8..=255u8)
+		.chain((100u8..=254u8).rev())
+		.cycle()
+		.step_by(7);
 
 	loop {
 		let mut off = 0usize;
@@ -318,6 +363,102 @@ fn main() {
 				}
 			}
 		}
+
+		// Now rasterize the root ring logs.
+		if let Some(debug_iface) = DEBUG_OUT_IFACE.get() {
+			loop {
+				// SAFETY: This is always safe.
+				let Ok(r) =
+					(unsafe { syscall_get!(ROOT_DEBUG_OUT_V0, debug_iface, 0, key!("ring_u64")) })
+				else {
+					break;
+				};
+
+				if r == 0 {
+					break;
+				}
+
+				for shift in (0..=(64 - 8)).rev().step_by(8) {
+					let b = ((r >> shift) & 0xFF) as u8;
+					if b == 0 {
+						break;
+					}
+					let c = b as char;
+
+					if c == '\n' {
+						text_x = 0;
+						text_y += 1;
+
+						if ((text_y + 1) * font_rasterizer::LINE_HEIGHT) >= text_bottom as usize {
+							text_y = 0;
+						}
+
+						continue;
+					}
+
+					if text_x >= text_right {
+						continue;
+					}
+
+					let iter = font_rasterizer::render_glyph(c)
+						.or_else(|| font_rasterizer::render_glyph('?'))
+						.expect("missing glyph");
+
+					let xoff = text_x;
+					let width = iter.width();
+
+					if width > 0 {
+						text_x += width as usize;
+					}
+
+					if xoff == 0 {
+						// First write of the line; clear it.
+						let left = text_left;
+						let right = text_right;
+						let top = text_top + (text_y * font_rasterizer::LINE_HEIGHT);
+						let bottom = top + font_rasterizer::LINE_HEIGHT;
+						vbuf.fill_box(left as u64, top as u64, right as u64, bottom as u64, 0);
+						cursor_y = text_y;
+					}
+
+					for (x, y, v) in iter {
+						let x = text_left + x + xoff;
+						let y = text_top + y + (text_y * font_rasterizer::LINE_HEIGHT);
+						if x < text_right && y < text_bottom {
+							vbuf.set_grey_pixel(x as u64, y as u64, v);
+						}
+					}
+				}
+			}
+		}
+
+		// Now the cursor.
+		let cursor_left = 5;
+		let cursor_top = cursor_y * font_rasterizer::LINE_HEIGHT + text_top;
+		let cursor_bottom = cursor_top + font_rasterizer::LINE_HEIGHT;
+		let cursor_right = 10;
+
+		if last_cursor_y != cursor_y {
+			// Clear the old cursor
+			let cursor_top = last_cursor_y * font_rasterizer::LINE_HEIGHT + text_top;
+			let cursor_bottom = cursor_top + font_rasterizer::LINE_HEIGHT;
+			vbuf.fill_box(
+				cursor_left,
+				cursor_top as u64,
+				cursor_right,
+				cursor_bottom as u64,
+				0,
+			);
+			last_cursor_y = cursor_y;
+		}
+
+		vbuf.fill_box(
+			cursor_left,
+			cursor_top as u64,
+			cursor_right,
+			cursor_bottom as u64,
+			cursor_level.next().unwrap_or(255),
+		);
 
 		sleep_between_frame(/*1000 / OroLogo::FPS as u64*/);
 	}

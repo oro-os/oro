@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use rusttype::{Font, Scale};
 
-const FONT_SIZE: f32 = 15.0;
+const FONT_SIZE: f32 = 20.0;
 
 #[expect(
 	clippy::cast_sign_loss,

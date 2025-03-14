@@ -18,6 +18,9 @@ const _: () = {
 	);
 };
 
+/// The height of each line.
+pub const LINE_HEIGHT: usize = FONT_HEIGHT + 1;
+
 /// Renders a glyph to a linear buffer with the given width and height,
 /// at the given position.
 ///

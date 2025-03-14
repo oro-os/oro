@@ -13,9 +13,10 @@ members = [
 
 [workspace.dependencies]
 oro = { git = "https://github.com/oro-os/kernel", features = ["nightly"] }
+#oro = { path = "/src/oro-os/kernel/oro", features = ["nightly"] }
 # NOTE(qix-): Once a global allocator is added, remove `default-features = false` (or at least enable
 # NOTE(qix-): the `compression` feature) as it will reduce the module size.
-oro-logo-rle = { git = "https://github.com/oro-os/oro-logo-rle", default-features = false, features = ["oro-logo-all"] }
+oro-logo-rle = { git = "https://github.com/oro-os/oro-logo-rle", default-features = false, features = ["oro-logo-64"] }
 
 [workspace.lints.rust]
 missing_docs = "warn"
